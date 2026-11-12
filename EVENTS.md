@@ -24,46 +24,20 @@ the rows you don't use.
 | 1 | Update the search index for a new booking | Direct synchronous call in `BookingService.book()`, before `store.save()` | Event-driven: update the index from a subscriber after the booking is saved | Search downtime should not block valid bookings. |
 | 2 | Check booking conflicts | Direct call to `conflictingBooking()` in `book()` | Synchronous, before saving and returning success | Prevent overlapping bookings. |
 | 3 | Send confirmation email | `EmailConfirmationHandler` subscribes to `booking.confirmed` | Event-driven; explicitly retry failed deliveries later | Email failure should not block valid bookings. |
-| 4 | | | | |
-| 5 | | | | |
-| 6 | | | | |
-| 7 | | | | |
-| 8 | | | | |
+| 4 | Save the booking | Direct call to `store.save()` in `book()` | Synchronous, before returning success | A booking must be saved before it is confirmed. |
 
 ### Two calls in detail
 
 Pick two rows and give each a paragraph rather than a line. One of them has to
 be the operation `TICKET.md` implicates.
 
-**First operation and your call: search indexing.** I would update the search
-index through a subscriber to `booking.confirmed`, after the booking is saved.
-The caller needs an immediate confirmation and booking id from `book()`, but
-does not need the booking to appear in search immediately. A few minutes of
-search delay is acceptable when the caller already has clear confirmation.
-Availability checks read the booking store rather than the search index.
-With the current wiring, a search outage makes `book()` throw before saving
-the booking. With event-driven indexing, an indexing failure would be recorded
-as a dead letter while the caller still receives the saved booking. This bus
-still runs subscribers synchronously; it isolates their exceptions, and failed
-indexing would need an explicit retry because the bus does not retry on its own.
+**Search indexing.** I would use a `booking.confirmed` subscriber so callers immediately receive the saved booking and id even when search is unavailable, accepting delayed search visibility and explicitly retrying indexing later.
 
-**Second operation and your call: conflict checking.** I would keep this
-synchronous. The caller needs to know the room is free before receiving a
-successful booking. `book()` checks the store through `conflictingBooking()`
-and throws `BookingError` when a clash exists. If availability cannot be checked,
-the request should fail rather than confirm a potentially overlapping booking.
+**Conflict checking.** I would keep `conflictingBooking()` synchronous so callers know the room is free before success, with conflicts causing `book()` to throw `BookingError`.
 
 ### The incident
 
-**The call behind `TICKET.md`.** In `src/service/bookingService.ts`,
-`BookingService.book()`, line 94 calls
-`this.searchIndex.indexBooking(booking, room, now)` before `this.store.save(booking)`.
-When the search cluster is unavailable, this call throws
-`SearchIndexUnavailableError`. The exception propagates to the caller of
-`book()` instead of returning a booking. The booking is not saved, and the
-subsequent audit record and confirmation event are not produced. This makes
-search availability a prerequisite for booking even though booking validation
-and conflict checks do not depend on the search index.
+**The call behind `TICKET.md`.** In `src/service/bookingService.ts:94`, `BookingService.book()` calls `this.searchIndex.indexBooking(booking, room, now)` before saving, so a search outage propagates `SearchIndexUnavailableError` to the caller instead of saving and returning a booking.
 
 ---
 
@@ -71,9 +45,7 @@ and conflict checks do not depend on the search index.
 
 ### Your prediction (before you run anything)
 
-**What you expect `redeliver` on a refund message to do.** Name what you expect
-to change in the ledger, at the payment provider, and in the bus log. Write it
-down, then run the demo.
+**What you expect `redeliver` on a refund message to do.** I expect redelivery not to add another ledger entry or issue another refund.
 
 ### Before your fix
 
