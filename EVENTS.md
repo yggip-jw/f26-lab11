@@ -255,11 +255,29 @@ the refund message is in the log and in the dead-letter list. Milestone 3 asks w
 
 **What, if anything, the failed delivery left undone.** The booking was cancelled and one ledger entry was recorded, but the provider settled nothing, leaving $85 unpaid and one dead letter, so recovery must resume payment without adding another ledger entry.
 
-**The option you took and its evidence.** If you redelivered the
-message, paste the state after the redelivery and the bus log line for that
-message. If you left the message for a person to handle, write the runbook line
-they would follow, and name which fields of the dead-lettered message they read to
-follow it and what each one tells them.
+**The option you took and its evidence.** I redelivered the refund message, keeping one ledger entry and completing the $85 payment on delivery 2, while the original dead letter remains as failure history.
+
+```text
+
+redelivering msg-3
+
+=== after recovery by redelivery ===
+ledger entries: 1
+  led-1 bk-1001 $85.00 (cancelled more than two hours ahead)
+gateway calls: 2
+gateway settlements: 1
+  stl-1 bk-1001 $85.00
+money returned in total: $85.00
+dead letters: 1
+  msg-3 refund.requested attempt 1 in RefundLedger: payment provider did not answer on call 1 for bk-1001
+    failedAtMinute: 480
+    payload: {"bookingId":"bk-1001","organizer":"H. Ahmad","organizerEmail":"hahmad@example.edu","amountCents":8500,"reason":"cancelled more than two hours ahead","requestedAtMinute":480}
+
+=== bus log ===
+  msg-1 booking.confirmed deliveries=1
+  msg-2 booking.cancelled deliveries=1
+  msg-3 refund.requested deliveries=2
+```
 
 ### The other option
 
