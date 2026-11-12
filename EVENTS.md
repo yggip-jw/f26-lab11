@@ -45,14 +45,66 @@ be the operation `TICKET.md` implicates.
 
 ### Your prediction (before you run anything)
 
-**What you expect `redeliver` on a refund message to do.** I expect redelivery not to add another ledger entry or issue another refund.
+**What you expect `redeliver` on a refund message to do.** I expect redelivery not to add another ledger entry or issue another refund, with the same message remaining in the bus log and its delivery count reaching 3 after two redeliveries.
 
 ### Before your fix
 
-**The run.** Paste what `npm run demo:replay` printed without editing it. A TA
-may ask you about it in milestone 3.
+**The run.**
 
-**Your prediction against the run.** Where they agree and where they do not.
+```text
+
+> campus-reservations@1.0.0 demo:replay
+> tsx src/demos/replayDemo.ts
+
+booked bk-1001 for 8500 cents
+cancelled bk-1001, refund 8500 cents, refund message msg-3
+
+=== after the cancellation (one delivery of the refund message) ===
+ledger entries: 1
+  led-1 bk-1001 $85.00 (cancelled more than two hours ahead)
+gateway calls: 1
+gateway settlements: 1
+  stl-1 bk-1001 $85.00
+money returned in total: $85.00
+dead letters: 0
+
+redelivering msg-3
+
+=== after one redelivery ===
+ledger entries: 2
+  led-1 bk-1001 $85.00 (cancelled more than two hours ahead)
+  led-2 bk-1001 $85.00 (cancelled more than two hours ahead)
+gateway calls: 2
+gateway settlements: 2
+  stl-1 bk-1001 $85.00
+  stl-2 bk-1001 $85.00
+money returned in total: $170.00
+dead letters: 0
+
+redelivering msg-3 again
+
+=== after two redeliveries ===
+ledger entries: 3
+  led-1 bk-1001 $85.00 (cancelled more than two hours ahead)
+  led-2 bk-1001 $85.00 (cancelled more than two hours ahead)
+  led-3 bk-1001 $85.00 (cancelled more than two hours ahead)
+gateway calls: 3
+gateway settlements: 3
+  stl-1 bk-1001 $85.00
+  stl-2 bk-1001 $85.00
+  stl-3 bk-1001 $85.00
+money returned in total: $255.00
+dead letters: 0
+
+=== bus log ===
+  msg-1 booking.confirmed deliveries=1
+  msg-2 booking.cancelled deliveries=1
+  msg-3 refund.requested deliveries=3
+```
+
+**Your prediction against the run.** 
+
+The delivery count matched my prediction, but each delivery added an entry and refunded another $85, bringing the total to $255 instead of staying at $85.
 
 ### Your fix
 
