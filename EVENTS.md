@@ -108,17 +108,111 @@ The delivery count matched my prediction, but each delivery added an entry and r
 
 ### Your fix
 
-**The diff.** Paste it.
+**The diff.**
+
+```diff
+diff --git a/src/handlers/refundLedger.ts b/src/handlers/refundLedger.ts
+index 600ffca..e3726df 100644
+--- a/src/handlers/refundLedger.ts
++++ b/src/handlers/refundLedger.ts
+@@ -24,6 +24,8 @@ export class RefundLedger implements Subscriber<RefundRequested> {
+   readonly name = 'RefundLedger';
+
+   private readonly entries: LedgerEntry[] = [];
++  private readonly recordedMessageIds = new Set<string>();
++  private readonly completedMessageIds = new Set<string>();
+   private readonly gateway: PaymentGateway;
+
+   constructor(gateway: PaymentGateway) {
+@@ -31,16 +33,25 @@ export class RefundLedger implements Subscriber<RefundRequested> {
+   }
+
+   handle(message: Message<RefundRequested>): void {
++    if (this.completedMessageIds.has(message.id)) {
++      return;
++    }
++
+     const event = message.payload;
+-    this.entries.push({
+-      entryId: `led-${this.entries.length + 1}`,
+-      bookingId: event.bookingId,
+-      organizer: event.organizer,
+-      amountCents: event.amountCents,
+-      reason: event.reason,
+-      recordedAtMinute: message.publishedAtMinute,
+-    });
++    if (!this.recordedMessageIds.has(message.id)) {
++      this.entries.push({
++        entryId: `led-${this.entries.length + 1}`,
++        bookingId: event.bookingId,
++        organizer: event.organizer,
++        amountCents: event.amountCents,
++        reason: event.reason,
++        recordedAtMinute: message.publishedAtMinute,
++      });
++      this.recordedMessageIds.add(message.id);
++    }
++
+     this.gateway.refund(event.bookingId, event.amountCents);
++    this.completedMessageIds.add(message.id);
+   }
+
+   /** Every ledger entry, oldest first. */
+```
 
 **What your fix uses to decide what to do on a second delivery, and what it
-does not protect.** One or two lines.
+does not protect.** I track recorded and completed message ids separately, marking completion only after payment succeeds. This in-memory check does not cover restarts, duplicate business requests with new ids, or a provider settling before its reply is lost.
 
 ### After your fix
 
-**The run.** Paste what `npm run demo:replay` printed on the fixed code.
+**The run.**
 
-**What stays the same across its three states.** Name the numbers you
-compared.
+```text
+
+> campus-reservations@1.0.0 demo:replay
+> tsx src/demos/replayDemo.ts
+
+booked bk-1001 for 8500 cents
+cancelled bk-1001, refund 8500 cents, refund message msg-3
+
+=== after the cancellation (one delivery of the refund message) ===
+ledger entries: 1
+  led-1 bk-1001 $85.00 (cancelled more than two hours ahead)
+gateway calls: 1
+gateway settlements: 1
+  stl-1 bk-1001 $85.00
+money returned in total: $85.00
+dead letters: 0
+
+redelivering msg-3
+
+=== after one redelivery ===
+ledger entries: 1
+  led-1 bk-1001 $85.00 (cancelled more than two hours ahead)
+gateway calls: 1
+gateway settlements: 1
+  stl-1 bk-1001 $85.00
+money returned in total: $85.00
+dead letters: 0
+
+redelivering msg-3 again
+
+=== after two redeliveries ===
+ledger entries: 1
+  led-1 bk-1001 $85.00 (cancelled more than two hours ahead)
+gateway calls: 1
+gateway settlements: 1
+  stl-1 bk-1001 $85.00
+money returned in total: $85.00
+dead letters: 0
+
+=== bus log ===
+  msg-1 booking.confirmed deliveries=1
+  msg-2 booking.cancelled deliveries=1
+  msg-3 refund.requested deliveries=3
+```
+
+**What stays the same across its three states.** Ledger entries, gateway calls, and settlements stay at 1, the total refunded stays at $85, and dead letters stay at 0 while the refund message's delivery count increases from 1 to 2 to 3.
 
 ---
 
@@ -126,12 +220,40 @@ compared.
 
 ### The failure
 
-**The run.** Run `npm run demo:failure` and paste what the delivery left
-behind (the ledger, the provider, and the dead-letter list).
+**The run.**
+
+```text
+
+> campus-reservations@1.0.0 demo:failure
+> tsx src/demos/failureDemo.ts
+
+armed: call 1 to the payment provider will throw
+booked bk-1001 for 8500 cents
+cancelled bk-1001, refund 8500 cents, refund message msg-3
+the cancel call itself returned: booking is cancelled
+
+=== after the failed delivery ===
+ledger entries: 1
+  led-1 bk-1001 $85.00 (cancelled more than two hours ahead)
+gateway calls: 1
+gateway settlements: 0
+money returned in total: $0.00
+dead letters: 1
+  msg-3 refund.requested attempt 1 in RefundLedger: payment provider did not answer on call 1 for bk-1001
+    failedAtMinute: 480
+    payload: {"bookingId":"bk-1001","organizer":"H. Ahmad","organizerEmail":"hahmad@example.edu","amountCents":8500,"reason":"cancelled more than two hours ahead","requestedAtMinute":480}
+
+=== bus log ===
+  msg-1 booking.confirmed deliveries=1
+  msg-2 booking.cancelled deliveries=1
+  msg-3 refund.requested deliveries=1
+
+the refund message is in the log and in the dead-letter list. Milestone 3 asks what you do with it.
+```
 
 ### Your recovery
 
-**What, if anything, the failed delivery left undone.**
+**What, if anything, the failed delivery left undone.** The booking was cancelled and one ledger entry was recorded, but the provider settled nothing, leaving $85 unpaid and one dead letter, so recovery must resume payment without adding another ledger entry.
 
 **The option you took and its evidence.** If you redelivered the
 message, paste the state after the redelivery and the bus log line for that
