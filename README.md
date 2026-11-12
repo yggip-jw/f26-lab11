@@ -1,3 +1,5 @@
+Tools and models used: OpenAI Codex with GPT-6.1 sol.
+
 # Campus Reservations
 
 The service behind the room booking page. People hold a room for a slot, get a

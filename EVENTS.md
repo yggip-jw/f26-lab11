@@ -281,6 +281,4 @@ dead letters: 1
 
 ### The other option
 
-**What the option you did not take would have cost.** One line, in terms of who
-does the work, when the organizer gets their money, and what has to be true for
-it to be safe.
+**What the option you did not take would have cost.** Manual triage would delay the refund until staff intervene and check the provider's settlement status before paying to avoid a duplicate refund.
